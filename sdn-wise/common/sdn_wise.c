@@ -13,11 +13,11 @@
 #include "sdn_wise.h"
 #include "hal_mcu.h"
 
-// Definizioni variabili per la gestione dei Timer Logici
+// Timer
 uint16_t cntBeacon = 0;
 uint16_t cntReport = 0;
 uint16_t cntUpdTable = 0;
-#if NODE  // Solo per il Nodo generico
+#if NODE  // Generic Node
 uint16_t cntData = 0;
 uint16_t cntSleep = 0;
 #endif
@@ -58,11 +58,11 @@ Queue tx_queue;
 Queue rx_queue;
 Config config;
 
-// App specific
+// App
 uint8_t dataGestiti;
 uint8_t lastTransmission;
 
-// funziona richiamata dall'interrupt del timer
+// Interrupt
 void timerInterrupt(void) {
   
 #if NODE 
@@ -100,22 +100,15 @@ void timerInterrupt(void) {
     }
     
     
-#if NODE
-    
-    // E' giusto che qst pacchetto sia inviato sempre dopo 120 secondi?
-    // io vorrei azzerare qst timer ogni volta che avviene una comunicazione
-    // e solo dopo 120 secondi che non succede nulla allora viene inviato per
-    // chiedere al controller di venire spento per X tempo per ora nn fa nulla
-    
+#if NODE    
     if ((cntSleep) >= config.cnt_sleep_max) {
       cntSleep = 0;
     }
-  } // SEMAFORO
+  }
 #endif
 }
 
-// Il beacon è inviato all'indirizzo di broadcast e riporta come next hop
-// il next hop verso il Sink
+// The beacon is sent in broadcast and contains as next hop the next hop towards the sink 
 void txBEACON(void) {
   uint8_t packet[SDN_WISE_BEACON_HDR_LEN];
   packet[SDN_WISE_LEN] = SDN_WISE_BEACON_HDR_LEN;
@@ -140,7 +133,7 @@ void txBEACON(void) {
   radioTX(packet,SDN_WISE_MAC_SEND_BROADCAST);
 }
 
-// la raccolta delle tabelle dei vicini è comune alle due tipologie di nodo
+// neigh. table
 void txREPORT(void) {
   int i = 0;
   int j = 0;
@@ -149,24 +142,22 @@ void txREPORT(void) {
   packet[SDN_WISE_NET_ID] = config.net_id;
   packet[SDN_WISE_SRC_H] = config.addr_h;
   packet[SDN_WISE_SRC_L] = config.addr_l;
-  packet[SDN_WISE_DST_H] = rule_to_sink->window[0].value_h; // indirizzo del sink
+  packet[SDN_WISE_DST_H] = rule_to_sink->window[0].value_h; // sink
   packet[SDN_WISE_DST_L] = rule_to_sink->window[0].value_l;
   packet[SDN_WISE_TYPE] = SDN_WISE_REPORT;
   packet[SDN_WISE_TTL] = config.ttl_max;
   packet[SDN_WISE_NXHOP_H] = rule_to_sink->action.value_h;
-  // Nel seguito si farà uso dell'accesso diretto a qst
   packet[SDN_WISE_NXHOP_L] = rule_to_sink->action.value_l; 
-  // bytes perchè la regola 0 è sempre diretta verso il sink
   packet[SDN_WISE_DIST] = num_hop_vs_sink;
   packet[SDN_WISE_BATT] = battery;
-  packet[SDN_WISE_NEIGH] = neighbors_number; //numero di vicini
+  packet[SDN_WISE_NEIGH] = neighbors_number; // size
   packet[SDN_WISE_LEN] = (neighbors_number*3) + SDN_WISE_REPORT_HDR_LEN;
   
   for (j = 0; j < packet[SDN_WISE_NEIGH]; j++) {
-    //Vicino i
+    //neigh i
     packet[SDN_WISE_REPORT_HDR_LEN + i++] = neighbor_table[j].addr_h;
     packet[SDN_WISE_REPORT_HDR_LEN + i++] = neighbor_table[j].addr_l;
-    //RSSI vs Vicino
+    //RSSI
     packet[SDN_WISE_REPORT_HDR_LEN + i++] = neighbor_table[j].rssi;
   } 
   initNeighborTable();
@@ -178,7 +169,7 @@ void txREPORT(void) {
 #endif
 }
 
-// vengono generati i dati periodici per/dall'applicazione
+// App layer
 void txDATA(void) {
   uint8_t packet[11];
   packet[SDN_WISE_LEN] = 11;
@@ -192,15 +183,14 @@ void txDATA(void) {
   packet[SDN_WISE_NXHOP_H] = rule_to_sink->action.value_h;
   packet[SDN_WISE_NXHOP_L] = rule_to_sink->action.value_l; 
   /* 
-  Dentro il pacchetto vengono inseriti i dati periodici raccolti dal sensore
-  che devono essere inviati al sink
+  reading
   */
   packet[10] = 111;
   
   runFlowMatch(packet);
 }
 
-// le regole nella tabella hanno un TTL quando raggiunge lo zero va cancellata
+// When the TTL reaches 0 the entry is deleted
 void updateTable(void) {
   uint8_t i = 0;
   for (i = 0; i < SDN_WISE_RLS_MAX; i++) {
@@ -210,8 +200,6 @@ void updateTable(void) {
       } else {
         initRule(&flow_table[i]);
 #if NODE
-        // per i nodi generici, quando scade la regola verso il sink, scatta il 
-        // semaforo e si cancella il num_hop
         if (i == 0) {
           semaforo = 0;
           num_hop_vs_sink = 255;
@@ -222,7 +210,7 @@ void updateTable(void) {
   }
 }
 
-// gestione dei pacchetti in ingresso
+// incoming packets
 void rxHandler(uint8_t* packet, uint8_t rssi) {  
   if (packet[SDN_WISE_LEN] > SDN_WISE_DFLT_HDR_LEN && 
       packet[SDN_WISE_NET_ID] == config.net_id &&
@@ -267,12 +255,12 @@ void rxHandler(uint8_t* packet, uint8_t rssi) {
     default:
       rxREPORT(packet);
       break;
-    }// fine switch sul type    
-  }// fine if sull'address
+    } 
+  }
 }
 
 /*-----------------------------------------------------------------------------
-/               Dati provenineti dal nodo e diretti al sink/viceversa
+/               Packets coming from/going to the sink           
 / ----------------------------------------------------------------------------*/
 void rxDATA(uint8_t* packet) {
   if (isAcceptedIdPacket(packet))
@@ -294,13 +282,11 @@ void rxBEACON(uint8_t* packet, uint8_t rssi) {
 #if NODE
     
     semaforo = 1;
-    // Il nodo è abilitato a trasmettere report solo quando semaforo==1
-    // Adesso devo capire a che distanza dal sink è il nodo mittente
-    
+    // a node can send a packet only if semaforo==1
+    // check the distance from the sink
     if (packet[SDN_WISE_DIST] < num_hop_vs_sink && (rssi >= rssi_vs_sink)) 
     { 
-      // Il mittente mi garantisce una distanza minore, scelgo lui come next_hop
-      // e aggiorno la regola relativa all'inoltro
+      //is the sender has a smaller distance, select it as next_hop
       writeRuleToSink(packet[SDN_WISE_NXHOP_H],packet[SDN_WISE_NXHOP_L],
                       packet[SDN_WISE_SRC_H],packet[SDN_WISE_SRC_L]);
       num_hop_vs_sink = packet[SDN_WISE_DIST] + 1; 
@@ -308,19 +294,14 @@ void rxBEACON(uint8_t* packet, uint8_t rssi) {
     } else if (packet[SDN_WISE_DIST] == num_hop_vs_sink && 
                rule_to_sink->action.value_h == packet[SDN_WISE_SRC_H] &&
                  rule_to_sink->action.value_l == packet[SDN_WISE_SRC_L])
-    {//ricarico il TTL della regola
+    {// Restore TTL
       rule_to_sink->stats.ttl = 254;             
     }
 #endif
-    
-    // nel codice precedente il sink non ha nulla da fare, poichè però il pacchetto
-    // è inviato dagli altri in broacdast, se ricevo questo pacchetto vuol dire che
-    // la sorgente è un mio vicino
-    // Questo codice serve per apprendere e memorizzare i vicini ad 1 hop
-    // i possibili valori restituiti da getPosNeighbour sono:
-    // SDN_WISE_RLS_MAX + 1 lista piena
-    // -1 vuoto
-    // # posizione del vicino o una posizione libera
+    // Learn the existence of one hop distance neigh.
+    // It can return:
+    // SDN_WISE_RLS_MAX + 1 if the list is full
+    // -1 if empty
     index = getNeighborIndex(MERGE_BYTES(packet[SDN_WISE_SRC_H],
                                          packet[SDN_WISE_SRC_L]));
     if (index != SDN_WISE_NEIGHBORS_MAX + 1) {
@@ -339,7 +320,7 @@ void rxBEACON(uint8_t* packet, uint8_t rssi) {
 }
 
 /*-----------------------------------------------------------------------------
-/          Invio al Sink (Report - Request)
+/                       Report - Request
 / ----------------------------------------------------------------------------*/
 void rxREPORT(uint8_t* packet) {
 #if NODE
@@ -352,18 +333,12 @@ void rxREPORT(uint8_t* packet) {
 /*-----------------------------------------------------------------------------
 /                     Rule/Action Response 
 / ----------------------------------------------------------------------------*/
-// E' un pacchetto inviato in unicast, deve essere forwardato dai nodi di
-// transito e letto solo dalla destinazione
+// Sent in unicast, forwarded by the nodes read by the destination
 void rxRESPONSE(uint8_t* packet) {
   uint8_t i = 0;
   if (isAcceptedIdPacket(packet))
   {
-    // Si memorizza la regola nella tabella
-    // Vedo se esiste una regola uguale
-    
-    
-    
-    // Vedo quante regole ci sono nel pacchetto
+    // Check the rule in the table
     uint8_t nRules = 
       (packet[SDN_WISE_LEN]-SDN_WISE_RESPONSE_HDR_LEN)/(SDN_WISE_RL_BODY_LEN);
     
@@ -401,9 +376,6 @@ void rxRESPONSE(uint8_t* packet) {
 /*-----------------------------------------------------------------------------
 /                      Open Path
 / ----------------------------------------------------------------------------*/
-// E' un pacchetto utilizzato per "aprire" un percorso tra due nodi che non
-// si conoscono
-// TODO da rivedere considerando come viene effettuato il multicast adesso
 void rxOPEN_PATH(uint8_t* packet) {
   if (isAcceptedIdPacket(packet))
   { 
@@ -411,9 +383,7 @@ void rxOPEN_PATH(uint8_t* packet) {
     
     i = SDN_WISE_OPEN_PATH_HDR_LEN;  
     
-    // mi cerco
     while (i < packet[SDN_WISE_LEN]) {
-      // mi trovo
       if (isAcceptedIdAddress(packet[i], packet[i + 1])){
         
         
@@ -430,7 +400,7 @@ void rxOPEN_PATH(uint8_t* packet) {
           SdnWiseRule rule;
           initRule(&rule);
           
-          //regola per forwardare indietro
+          // back
           rule.window[0].op = SDN_WISE_EQUAL|SDN_WISE_SIZE_2|SDN_WISE_PACKET;
           rule.window[0].pos = SDN_WISE_DST_H;
           rule.window[0].value_h = HIGH_BYTE(first_path_addr);
@@ -445,12 +415,12 @@ void rxOPEN_PATH(uint8_t* packet) {
           insertRule(&rule, p);
         }
         
-        // se non sono l'ultimo
+        // if I'm not the last one 
         if (actual_address != last_path_addr){
           SdnWiseRule rule;
           initRule(&rule);
           
-          //regola per forwardare avanti
+          // forward
           rule.window[0].op = SDN_WISE_EQUAL|SDN_WISE_SIZE_2|SDN_WISE_PACKET;
           rule.window[0].pos = SDN_WISE_DST_H; 
           rule.window[0].value_h = HIGH_BYTE(last_path_addr); 
@@ -460,16 +430,15 @@ void rxOPEN_PATH(uint8_t* packet) {
           rule.action.pos = SDN_WISE_NXHOP_H; 
           rule.action.value_h = packet[i + 2]; 
           rule.action.value_l = packet[i + 3]; 
-          //e la imparo
           uint8_t p = searchRule(&rule);
           insertRule(&rule, p);
           
-          //cambio next hop e dest del pacchetto
+          // change next hop
           packet[SDN_WISE_DST_H] = packet[i + 2];                       
           packet[SDN_WISE_DST_L] = packet[i + 3];  
           packet[SDN_WISE_NXHOP_H] = packet[i + 2];                       
           packet[SDN_WISE_NXHOP_L] = packet[i + 3];  
-          // e forwardo  
+          // and forwardo  
           radioTX(packet,SDN_WISE_MAC_SEND_UNICAST);
           break;
         } 
@@ -482,7 +451,7 @@ void rxOPEN_PATH(uint8_t* packet) {
 }
 
 /*-----------------------------------------------------------------------------
-/                      Configurazione
+/                      Config
 / ----------------------------------------------------------------------------*/
 void rxCONFIG(uint8_t* packet) {
   uint16_t dest = MERGE_BYTES(packet[SDN_WISE_DST_H], packet[SDN_WISE_DST_L]);
@@ -559,7 +528,7 @@ void rxCONFIG(uint8_t* packet) {
           }
         }else{
           toBeSent = 1;
-          uint8_t packetList[SDN_WISE_CONFIG_HDR_LEN+SDN_WISE_ACCEPTED_ID_MAX*2]; // TODO lunghezza giusta
+          uint8_t packetList[SDN_WISE_CONFIG_HDR_LEN+SDN_WISE_ACCEPTED_ID_MAX*2]; // len
           uint8_t iii;
           switch (id){
           case SDN_WISE_CNF_ID_ADDR:
@@ -696,7 +665,7 @@ void rxCONFIG(uint8_t* packet) {
   }
 }
 
-// Inizializza le varibili necessarie al corretto funzionamento del protocollo
+// Init
 void SDN_WISE_Init(void) {
   config.cnt_beacon_max = SDN_WISE_DFLT_CNT_BEACON_MAX;
   config.cnt_report_max = SDN_WISE_DFLT_CNT_REPORT_MAX;
@@ -720,11 +689,11 @@ void SDN_WISE_Init(void) {
   
 #if NODE 
   semaforo = 0;
-  num_hop_vs_sink = config.ttl_max + 1; // inizializzo il numero di hop al max+1
+  num_hop_vs_sink = config.ttl_max + 1; // hop equal to max+1
   rssi_vs_sink = 0;
   config.cnt_sleep_max = SDN_WISE_DFLT_CNT_SLEEP_MAX;
 #else
-  num_hop_vs_sink = 0; // inizializzo il numero di hop per il sink=0
+  num_hop_vs_sink = 0; // hop if sink=0
   rssi_vs_sink = 255;
 #endif
   
@@ -746,19 +715,18 @@ void SDN_WISE_Init(void) {
   rx_queue.size = 0;
 }
 
-// Sceglie un vicino nel caso in cui non so a chi inviare
+// Random neigh. if there is no other option
 uint8_t chooseNeighbor(uint8_t action_value_2_byte) {
   uint8_t i;
   for (i = 0; i < SDN_WISE_NEIGHBORS_MAX; i++) {
     if (action_value_2_byte == neighbor_table[i].addr_l)
       return (neighbor_table[i].addr_h);
   }
-  //se sono quin vuol dire che c'è stato un errore
-  //in questo caso torno un codice di errore 254
+  // error
   return 254;
 }
 
-// Inserisce una regola nella tabella
+// adds a rule in the table
 void insertRule(SdnWiseRule* rule, uint8_t pos){
   if (pos >= SDN_WISE_RLS_MAX) {
     pos = flow_table_free_pos;
@@ -770,7 +738,7 @@ void insertRule(SdnWiseRule* rule, uint8_t pos){
   flow_table[pos] = *rule;
 }
 
-// Verifica che una condizione di una finestra di una regola è soddisfatta
+// check a condition in a window
 uint8_t matchWindow(SdnWiseRuleWindow* window, uint8_t* packet){
   
   uint8_t size = GET_RL_WINDOW_SIZE(window->op);
@@ -801,7 +769,7 @@ uint8_t matchWindow(SdnWiseRuleWindow* window, uint8_t* packet){
   }
 }
 
-// Verifica che un pacchetto corrisponda a una regola
+// match a packet
 uint8_t matchRule(SdnWiseRule* rule, uint8_t* packet){
   uint8_t i;
   uint8_t sum = 0;
@@ -816,7 +784,7 @@ uint8_t matchRule(SdnWiseRule* rule, uint8_t* packet){
   return (sum == SDN_WISE_WINDOWS_MAX*2 ? 0 : 1);
 }
 
-// Esegue l'azione alla posizione r della tabella
+// run the action
 void runAction(SdnWiseRuleAction* action, uint8_t* packet){
   
   
@@ -849,29 +817,21 @@ void runAction(SdnWiseRuleAction* action, uint8_t* packet){
   case SDN_WISE_DROP: 
     {
       uint8_t prob = action->value_h;
-      // Se prob di drop=70% significa che se genero un numero,
-      // droppo il pacchetto se il numero generato è inferiore a 70
       if (rand() % 101 <= prob) {
         return;
       } else {
-        // il secondo byte indica il secondo byte
-        // dell'indirizzo del nodo a cui forwardare il pacchetto
-        // il primo byte è scelto casualmente, tra i vicini con
-        // il secondo byte dell'indirizzo posto uguale a quello
-        // contenuto nella rule
         uint8_t first_byte_address = chooseNeighbor(action->value_l);
         if (first_byte_address == 254) {
-          // c'è stato un errore droppo il pacchetto
           return;
         } else {
           packet[SDN_WISE_TTL]--;
           packet[SDN_WISE_NXHOP_H] = first_byte_address;
           packet[SDN_WISE_NXHOP_L] = action->value_h;
           radioTX(packet,SDN_WISE_MAC_SEND_UNICAST);
-        }//else
-      }//else
+        }
+      }
       break;
-    }//case 2
+    }
   case SDN_WISE_MODIFY: 
     {
       if (action_location){
@@ -899,7 +859,6 @@ void runAction(SdnWiseRuleAction* action, uint8_t* packet){
     }
   case SDN_WISE_AGGREGATE: 
     {
-      // TODO Ancora da definire
       break;
     }
     
@@ -907,11 +866,11 @@ void runAction(SdnWiseRuleAction* action, uint8_t* packet){
     {
       SDN_WISE_Callback(packet);
     }
-  }//switch
+  }
   
 }
 
-// Cerca nella tabella e in caso esegue la action o invia un Type3
+// Search in the table or send a Type3
 void runFlowMatch(uint8_t* packet){
   
   uint8_t j,i, found;
@@ -936,7 +895,7 @@ void runFlowMatch(uint8_t* packet){
     // I must modify the source address with myself,
     packet[SDN_WISE_SRC_H] = config.addr_h;
     packet[SDN_WISE_SRC_L] = config.addr_l;
-    // il nuovo tipo è impostato a: il tipo originale + 128
+    
     packet[SDN_WISE_TYPE] += 128;
     packet[SDN_WISE_TTL] = config.ttl_max;
     // The next hop at the moment will be the best hop to reach the sink
@@ -954,7 +913,6 @@ void runFlowMatch(uint8_t* packet){
 }
 
 
-// Esegue e verifica il risultato di un operazione espressa nella finestra
 uint8_t doOperation(uint8_t operatore, uint16_t item1, uint16_t item2) {
   switch (operatore) {
   case SDN_WISE_EQUAL:
@@ -975,7 +933,7 @@ uint8_t doOperation(uint8_t operatore, uint16_t item1, uint16_t item2) {
 }
 
 
-// Verifica l'esistenza di una regola nella tabella
+// search for a rule in the table
 uint8_t searchRule(SdnWiseRule* rule){
   
   uint8_t i;
@@ -1017,7 +975,7 @@ uint8_t searchRule(SdnWiseRule* rule){
 
 
 
-// Inizializza la FlowTable
+// init the Flowtable
 void initFlowTable(void) {
   int i;
 #if !NODE
@@ -1073,7 +1031,7 @@ writeRuleToController(){
   rule_to_sink->stats.count = 0;
 }
 
-// Cancellare/Inizializza la lista dei vicini
+// init neigh. list
 void initNeighborTable(void) {
   uint8_t i;
   for (i = 0; i<SDN_WISE_NEIGHBORS_MAX; i++){
@@ -1082,8 +1040,7 @@ void initNeighborTable(void) {
   neighbors_number = 0;
 }
 
-// Restuitisce l'indice del vicino se è gia presente in lista 
-// altrimenti MAX+1 se piena o -1 se c'è spazio
+// returns the index of a neigh. otherwise MAX+1 if full -1 if there is space
 int getNeighborIndex(uint16_t addr) {
   int i;
   uint16_t tmp_addr;
@@ -1098,23 +1055,21 @@ int getNeighborIndex(uint16_t addr) {
   return SDN_WISE_NEIGHBORS_MAX + 1;
 }
 
-// accoda un pacchetto per l'invio su cc25xx
+// enqueue a packet to be send
 void radioTX(uint8_t packet[SDN_WISE_PACKET_LEN], uint8_t is_multicast) {
   
-  // TODO questo 255 potrebbe essere usato per passare la regola che ha creato il
-  // pacchetto in modo da poterla decrementare se va male
   queue_add_element(&tx_queue, packet, 255, is_multicast);
   osal_start_timerEx(MSA_TaskId, SDN_WISE_SEND_EVENT, 0);
 }
 
-// invia un pacchetto sulla seriale
+// send using the serial port
 
 void controllerTX(uint8_t* packet) {
-  // START e STOP BYTE sono aggiunti dalla HalUARTWrite
+  // WARNING: START and STOP bytes should be added in HalUARTWRite
   HalUARTWrite(HAL_UART_PORT_0, packet, packet[SDN_WISE_LEN]);
 }
 
-// inizializza una regola
+// init a rule
 void initRule(SdnWiseRule* rule){
   uint8_t i;
   for (i = 0; i<SDN_WISE_WINDOWS_MAX;i++)
@@ -1137,8 +1092,6 @@ void SDN_WISE_Callback(uint8_t* packet){
 #endif  
 }
 
-// cerca la destinazione del pacchetto tra gli id accettati, 
-// SDN_WISE_ACCEPTED_ID_MAX + 1 non c'è, altrimenti restituisce la posizione
 uint8_t searchAcceptedId(uint16_t addr){
   uint8_t i;
   for (i = 0; i< SDN_WISE_ACCEPTED_ID_MAX; i++){
@@ -1149,7 +1102,6 @@ uint8_t searchAcceptedId(uint16_t addr){
   return SDN_WISE_ACCEPTED_ID_MAX + 1;
 }
 
-// verifica se una SDN_WISE_DST è accetabile dal nodo
 uint8_t isAcceptedIdAddress(uint8_t addr_h, uint8_t addr_l){
   if (((addr_h == config.addr_h && addr_l == config.addr_l) ||
        (addr_h == 255 && addr_l == 255) ||
@@ -1160,12 +1112,10 @@ uint8_t isAcceptedIdAddress(uint8_t addr_h, uint8_t addr_l){
     return 0; 
 }
 
-// verifica se un pacchetto è accettabile dal nodo
 uint8_t isAcceptedIdPacket(uint8_t* packet){
   return isAcceptedIdAddress(packet[SDN_WISE_DST_H],packet[SDN_WISE_DST_L]);
 }
 
-// Converte l'indice richiesto nell'indice effettivo della flow table
 uint8_t getActualFlowIndex(uint8_t j){
   //j = j % SDN_WISE_RLS_MAX;
   int16_t i;
