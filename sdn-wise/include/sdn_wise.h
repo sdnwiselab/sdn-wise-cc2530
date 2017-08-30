@@ -236,31 +236,15 @@ typedef struct StructConfig {
 /          Global Vars
 / ----------------------------------------------------------------------------*/
 
-// Stato del microcontroller
 extern uint8_t MC_Status[7];
-
-// buffer ricezione da Seriale
 extern uint8_t bufferInUSB [SDN_WISE_PACKET_LEN];
-
-// flag ricezione da seriale (inizio di un pacchetto)
 extern uint8_t packet_start_flg;
-
-// Conteggio di caratteri ricevuti da seriale
 extern uint8_t receivedBytes;
 extern uint8_t expectedBytes;
-
-// queue messaggi da inviare
 extern Queue tx_queue;
-
-// queue messaggi da processare
 extern Queue rx_queue;
-
-// configurazione del protocollo
 extern Config config;
-
-// stato pacchetti dati inviati su RF
 extern uint8_t lastTransmission;
-
 extern uint16_t copie;
 extern uint8_t lastDsn;
 
@@ -268,13 +252,13 @@ extern uint8_t lastDsn;
 /         Functions
 / ----------------------------------------------------------------------------*/
 
-// invia un pacchetto al livello MAC
+// send to MAC layer
 void radioTX(uint8_t* packet, uint8_t is_multicast);
 
-// invia un pacchetto sulla seriale
+// send to the serial port
 void controllerTX(uint8_t* packet);
 
-// Gestione pacchetti ricevuti in base al Type
+// handle incoming packets
 void rxHandler(uint8_t* packet, uint8_t rssi);
 
 void rxDATA(uint8_t* packet);
@@ -285,7 +269,6 @@ void rxRESPONSE(uint8_t* packet);
 void rxOPEN_PATH(uint8_t* packet);
 void rxCONFIG(uint8_t* packet);
 
-// Funzioni richiamate dai timer logici
 void timerInterrupt(void);
 void updateTable(void);
 
@@ -297,45 +280,39 @@ void txDATA(void);
 /         Inits
 / ----------------------------------------------------------------------------*/
 
-// Inizializza le varibili necessarie al corretto funzionamento del protocollo
 void SDN_WISE_Init(void);
-
-// Inizializza la FlowTable
 void initFlowTable(void);
 void initRule(SdnWiseRule* rule);
-
-// Cancella/Inizializza la lista dei vicini
 void initNeighborTable(void);
 
 /*------------------------------------------------------------------------------
 /         Flow Table
 / ----------------------------------------------------------------------------*/
 
-// Inserisce una regola nella tabella
+// install a rule in the table
 void insertRule(SdnWiseRule* rule, uint8_t pos);
 
-// Verifica che una condizione di una finestra di una regola Ã¨ soddisfatta
+// check if a condition is satisfied
 uint8_t matchWindow(SdnWiseRuleWindow* window, uint8_t* packet);
 
-// Verifica che un pacchetto corrisponda a una regola
+// match a packet
 uint8_t matchRule(SdnWiseRule* rule, uint8_t* packet);
 
-// Esegue l'azione 
+// run an action
 void runAction(SdnWiseRuleAction* action, uint8_t* packet);
 
-// Esegue e verifica il risultato di un operazione espressa nella finestra
+// check the velue of an operation contained in a window
 uint8_t doOperation(uint8_t operation, uint16_t item1, uint16_t item2);
 
-// Verifica l'esistenza di una regola nella tabella
+// search for a rule in the table
 uint8_t searchRule(SdnWiseRule* rule);
 
-// Cerca nella tabella e in caso esegue la action o invia un Type3
+// search in the flow table otherwise type 3
 void runFlowMatch(uint8_t* packet);
-
-// Converte l'indice richiesto nell'indice effettivo della flow table 
+ 
 uint8_t getActualFlowIndex(uint8_t pos);
 
-// Scrive la regola per inoltrare i pacchetti di controllo al sink
+// install the rule to reach the sink
 void writeRuleToSink(uint8_t sink_address_h, uint8_t sink_address_l, 
                      uint8_t action_h, uint8_t action_l);
 
@@ -345,30 +322,30 @@ void writeRuleToController(void);
 /         Neighbors Table
 / ----------------------------------------------------------------------------*/
 
-// Sceglie un vicino nel caso in cui non so a chi inviare
+// return a random neigh.
 uint8_t chooseNeighbor(uint8_t action_value_2_byte);
 
-// Restuitisce l'indice del vicino se gia presente in lista altrimenti MAX+1
+// return the position of a neigh. in the neigh. table otherwise MAX+1
 int getNeighborIndex(uint16_t addr);
 
 /*------------------------------------------------------------------------------
 /         Accepted ID
 / ----------------------------------------------------------------------------*/
 
-// cerca la destinazione del pacchetto tra gli id accettati, ne ritorna l'index
+// search for the dest in the accepted ids. Returns the position
 uint8_t searchAcceptedId(uint16_t addr);
 
-// verifica se un ID è accettato dal nodo a partire dal pacchetto
+// check if an id is accepted by the node
 uint8_t isAcceptedIdPacket(uint8_t* packet);
 
-// verifica se un ID è accettato dal nodo a partire dall'indirizzo
+// check if an id is accepted by the node
 uint8_t isAcceptedIdAddress(uint8_t addr_h,uint8_t addr_l);
 
 /*------------------------------------------------------------------------------
 /         Application
 / ----------------------------------------------------------------------------*/
 
-// viene invoca ogni volta che un pacchetto è destinato al livello applicativo
+// called when a packet is received by the app layer
 void SDN_WISE_Callback(uint8_t* packet);
 
 #endif
